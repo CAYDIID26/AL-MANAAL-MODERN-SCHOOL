@@ -386,7 +386,7 @@ async function boot(){
     try{OWNER=user?await user.isOwner():false;}catch(e){}
     try{const w=user?await user.can("data.write"):null;if(w===false)CAN_WRITE=false;}catch(e){}}
     const timer=setTimeout(()=>{if(loaded.size<COLS.length)$("#modeNote").textContent="Data is slow to arrive; what you see may be out of date.";},10000);
-    let pending=false;const soon=()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;render();});};
+    let pending=false;const soon=()=>{if(pending)return;pending=true;setTimeout(()=>{pending=false;if(isEditing()){deferredRender=true;return;}render();},30);};
     COLS.forEach(col=>UNSUBS.push(DB.collection(col).onSnapshot(snap=>{
       if(MODE!=="shared")return;
       D[col]=snap.docs.map(d=>({id:d.id,...d.data()}));
@@ -575,8 +575,12 @@ function render(){
   if(!perm(modOf(r),"view")){
     if(r==="dashboard"){const f=NAV.find(n=>n.g&&perm(n.g,"view"));if(f){go(f.items[0][0]);return;}}
     v.innerHTML=`<div class="panel"><div class="empty"><strong>No access</strong>Your role (${esc(roleName())}) cannot open ${esc(meta.t)}. Ask the Super Admin if you need it.</div></div>`;return;}
-  const fn=VIEWS[r];v.innerHTML="";
+  const fn=VIEWS[r];
+  if(DIRTY_ROUTE!==r){DIRTY.clear();DIRTY_ROUTE=r;}
+  const kept=captureFields(v);
+  v.innerHTML="";
   const sy=window.scrollY;fn(v);window.scrollTo(0,sy);
+  restoreFields(v,kept);
   if(MODE==="shared"&&!CAN_WRITE)v.insertAdjacentHTML("afterbegin",`<div class="note row" style="justify-content:space-between"><span>View only: your access cannot change the shared school. Practise on your own copy to add and edit records.</span><button class="btn sm primary goLocal">Practise on my own copy</button></div>`);
   v.querySelectorAll("[data-need]").forEach(el=>{const [m,a]=el.dataset.need.split(":");if(!perm(m,a||"view"))el.remove();});
 }
@@ -584,6 +588,29 @@ document.querySelector(".branch-sel").addEventListener("click",()=>{if($("#branc
 $("#branchSel").onchange=e=>{CUR=e.target.value;try{localStorage.setItem("schoolhub-branch",CUR);}catch(x){}render();toast(CUR==="all"?"Showing all branches":"Switched to "+branchName(CUR));};
 $("#railSearch").onsubmit=e=>{e.preventDefault();stuFilter.q=$("#railQ").value;stuFilter.cls="";if(route()==="stu-details")render();else go("stu-details");};
 
+/* ---------- Keep what people type ----------
+   Live updates from other users re-draw the page. Fields the person has
+   typed in keep their values, and the field they are in keeps focus.   */
+const DIRTY=new Set();let DIRTY_ROUTE=null,deferredRender=false;
+const FIELD_SEL="input,select,textarea";
+function fieldKey(el,all){if(el.id)return "#"+el.id;if(!el.name)return null;const same=all.filter(x=>x.name===el.name);return el.name+"@"+same.indexOf(el);}
+function isEditing(){const a=document.activeElement,v=$("#view");return !!(a&&v&&v.contains(a)&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName));}
+function markDirty(e){const v=$("#view");if(!v||!e.target||!v.contains(e.target)||!e.target.matches||!e.target.matches(FIELD_SEL))return;if(DIRTY_ROUTE!==route()){DIRTY.clear();DIRTY_ROUTE=route();}const k=fieldKey(e.target,[...v.querySelectorAll(FIELD_SEL)]);if(k)DIRTY.add(k);}
+document.addEventListener("input",markDirty,true);document.addEventListener("change",markDirty,true);
+document.addEventListener("reset",e=>{const v=$("#view");if(v&&v.contains(e.target))DIRTY.clear();},true);
+document.addEventListener("focusout",()=>{if(deferredRender)setTimeout(()=>{if(deferredRender&&!isEditing()){deferredRender=false;render();}},200);});
+function captureFields(v){
+  const all=[...v.querySelectorAll(FIELD_SEL)];if(!all.length)return null;
+  const vals={};all.forEach(el=>{const k=fieldKey(el,all);if(k&&DIRTY.has(k))vals[k]=(el.type==="checkbox"||el.type==="radio")?{c:el.checked}:{v:el.value};});
+  const a=document.activeElement;let focus=null,ss=null,se=null;
+  if(a&&v.contains(a)&&a.matches(FIELD_SEL)){focus=fieldKey(a,all);try{ss=a.selectionStart;se=a.selectionEnd;}catch(e){}}
+  return {vals,focus,ss,se};
+}
+function restoreFields(v,kept){
+  if(!kept)return;const all=[...v.querySelectorAll(FIELD_SEL)];
+  all.forEach(el=>{const k=fieldKey(el,all);const s=k&&kept.vals[k];if(!s||el.type==="file")return;if("c" in s)el.checked=s.c;else el.value=s.v;});
+  if(kept.focus){const el=all.find(x=>fieldKey(x,all)===kept.focus);if(el){try{el.focus({preventScroll:true});if(kept.ss!=null&&el.setSelectionRange)el.setSelectionRange(kept.ss,kept.se);}catch(e){}}}
+}
 const VIEWS={};
 
 /* =================== DASHBOARD =================== */

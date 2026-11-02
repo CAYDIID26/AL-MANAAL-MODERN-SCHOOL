@@ -1193,7 +1193,7 @@ const DEFAULT_ROLES={
  "role-accountant":{name:"Accountant",desc:"Collects fees and records income, expenses and payroll.",perms:PERMS({dashboard:["view"],stu:["view"],fee:FULL,inc:FULL,exp:FULL,hr:["view","add"],rep:["view"]})},
  "role-receptionist":{name:"Receptionist",desc:"Handles the front office, enquiries and new admissions.",perms:PERMS({dashboard:["view"],fo:FULL,stu:["view","add","edit"],aca:["view"],com:["view","add"]})}
 };
-const DEMO_USERS=[["u-superadmin","superadmin","super123","Super Admin","role-superadmin","all"],["u-admin","admin","admin123","School Admin","role-admin","main"],["u-teacher","teacher","teacher123","Ahmed Warsame","role-teacher","main"],["u-accountant","accountant","account123","Fadumo Hassan","role-accountant","main"],["u-reception","reception","recep123","Front Desk","role-receptionist","main"],["u-north","north.admin","north123","Sahra Abdi","role-admin","north"]];
+const DEMO_USERS=[["u-superadmin","superadmin",null,"Super Admin","role-superadmin","all",{salt:"a3cf5c78fdf29dc2fbea563a",pwHash:"0d7076af42a6b15cd89a39dbf33e0b7fd32130b49fd21549d524d8c59e8bda16"}],["u-admin","admin","admin123","School Admin","role-admin","main"],["u-teacher","teacher","teacher123","Ahmed Warsame","role-teacher","main"],["u-accountant","accountant","account123","Fadumo Hassan","role-accountant","main"],["u-reception","reception","recep123","Front Desk","role-receptionist","main"],["u-north","north.admin","north123","Sahra Abdi","role-admin","north"]];
 let SESSION=null,OWNER=false,gateMode=null,showMenu=false;
 const AUTO_LOGIN=location.hash==="#open-admin"?"admin":null; /* a link ending in #open-admin opens already signed in as admin */
 let autoTried=false,autoSeeded=false;
@@ -1210,7 +1210,9 @@ const newSalt=()=>[...crypto.getRandomValues(new Uint8Array(12))].map(b=>b.toStr
 async function hashPw(salt,pw){const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(salt+":"+pw));return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");}
 const validUsername=u=>/^[a-z0-9._-]{3,30}$/.test(u);
 async function ensureRoles(){for(const [id,r] of Object.entries(DEFAULT_ROLES))if(!byId("roles",id))await rawSet("roles",id,r);}
-async function seedDemoUsers(){for(const [id,un,pw,name,role,br] of DEMO_USERS){if(byId("users",id)||D.users.some(u=>u.username===un))continue;const salt=newSalt();await rawSet("users",id,{username:un,name,role,branchId:br,status:"Active",salt,pwHash:await hashPw(salt,pw),demoPass:pw});}}
+async function seedDemoUsers(){for(const [id,un,pw,name,role,br,fixed] of DEMO_USERS){if(byId("users",id)||D.users.some(u=>u.username===un))continue;
+  if(fixed){await rawSet("users",id,{username:un,name,role,branchId:br,status:"Active",salt:fixed.salt,pwHash:fixed.pwHash});continue;}
+  const salt=newSalt();await rawSet("users",id,{username:un,name,role,branchId:br,status:"Active",salt,pwHash:await hashPw(salt,pw),demoPass:pw});}}
 
 function gate(){
   const g=$("#gate");
@@ -1239,7 +1241,7 @@ function gateHTML(mode){
     <div class="field"><label for="f_pw">Password <span class="req">*</span></label><div class="pw-wrap"><input id="f_pw" name="pw" type="password" required autocomplete="new-password"><button type="button" class="pw-toggle" data-pwt="f_pw">Show</button></div></div>
     ${fieldHTML({k:"pw2",label:"Confirm password",type:"password",req:true})}
     <div class="err" id="gErr" role="alert"></div><button class="btn primary block" type="submit">Create account and sign in</button>
-    ${MODE==="local"?`<div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px"><span class="muted" style="font-size:12.5px">Or skip this and practise with a ready-made school: sample classes, students, fees and the practice accounts (superadmin / super123, teacher / teacher123 and others).</span><button type="button" class="btn block" id="seedLocal">Load the sample school</button></div>`:""}</form></div>`;
+    ${MODE==="local"?`<div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px"><span class="muted" style="font-size:12.5px">Or skip this and practise with a ready-made school: sample classes, students, fees and the practice accounts (admin / admin123, teacher / teacher123 and others).</span><button type="button" class="btn block" id="seedLocal">Load the sample school</button></div>`:""}</form></div>`;
   const demos=st.showDemo==="No"?[]:sortBy(D.users.filter(u=>u.demoPass&&u.status!=="Disabled"),u=>DEMO_USERS.findIndex(d=>d[0]===u.id));
   return brand+`<div class="gate-form-wrap"><form class="gate-card" id="loginForm" autocomplete="on"><h2>Sign in</h2><p class="muted" style="margin:0">Use the username and password your school administrator gave you.</p>
    ${MODE==="shared"&&!CAN_WRITE?`<div class="note" style="display:flex;flex-direction:column;gap:8px">Your access lets you look at the shared school but not change it. Practise on your own copy instead: it starts with the same data and practice accounts, and saves in this browser.<button type="button" class="btn primary goLocal">Practise on my own copy</button></div>`:""}

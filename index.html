@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><title>SchoolHub Practice</title>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Al Manaal Modern School</title></head><body><title>SchoolHub Practice</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -1195,8 +1195,8 @@ const DEFAULT_ROLES={
 };
 const DEMO_USERS=[["u-superadmin","superadmin","super123","Super Admin","role-superadmin","all"],["u-admin","admin","admin123","School Admin","role-admin","main"],["u-teacher","teacher","teacher123","Ahmed Warsame","role-teacher","main"],["u-accountant","accountant","account123","Fadumo Hassan","role-accountant","main"],["u-reception","reception","recep123","Front Desk","role-receptionist","main"],["u-north","north.admin","north123","Sahra Abdi","role-admin","north"]];
 let SESSION=null,OWNER=false,gateMode=null,showMenu=false;
-const AUTO_LOGIN="admin"; /* a link ending in #open-admin opens already signed in as admin */
-let autoTried=false;
+const AUTO_LOGIN=location.hash==="#open-admin"?"admin":null; /* a link ending in #open-admin opens already signed in as admin */
+let autoTried=false,autoSeeded=false;
 const SKEY="schoolhub-session";
 const roleOf=u=>u&&byId("roles",u.role);
 const roleName=()=>{const r=roleOf(SESSION);return r?r.name:"No role";};
@@ -1223,7 +1223,8 @@ function gate(){
     if(MODE==="shared"&&!CAN_WRITE){goLocal().then(()=>{const u=pick();if(u)startSession(u);});return false;}
     if(!D.users.length&&MODE==="local"){seedSampleLocal().then(()=>{const u=pick();if(u)startSession(u);});}
     else{const u=pick();if(u){startSession(u);return false;}}}
-  const mode=!ready?"wait":(D.users.length?"login":"setup");
+  if(ready&&MODE==="local"&&!D.users.length&&!autoSeeded){autoSeeded=true;seedSampleLocal();}
+  const mode=!ready||(MODE==="local"&&!D.users.length&&autoSeeded&&SEEDING)?"wait":(D.users.length?"login":"setup");
   if(mode!==gateMode){gateMode=mode;g.hidden=false;g.innerHTML=gateHTML(mode);bindGate(mode);}
   return false;
 }

@@ -79,6 +79,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .branch-sel{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:7px;padding:2px 4px 2px 10px;background:var(--sunk)}
 .branch-sel svg{width:15px;height:15px;color:var(--muted)}
 .branch-sel select{border:0;background:transparent;padding:5px 4px;font-weight:500;max-width:190px}
+.branch-sel select:disabled{pointer-events:none;color:var(--fg);opacity:.85}
 .content{padding-block:22px 56px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px;max-width:1280px;width:100%}
 .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:500;font-size:13px;white-space:nowrap;text-decoration:none;color:var(--fg)}
 .btn:hover{background:var(--sunk)}
@@ -353,15 +354,37 @@ async function safe(fn,okMsg){try{await fn();if(okMsg)toast(okMsg);return true;}
   else toast("Could not save: "+(e&&e.message||"unknown error"));return false;}}
 
 /* ---------- Boot ---------- */
+/* Shared live database for the public (GitHub Pages) copy.
+   Paste the web-app config from Firebase › Project settings › Your apps here.
+   Leave it null to keep each device's data in its own browser.          */
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyAe7Mjf9MSBdtRwX2eyNtIUHE4RTxXkxls",
+  authDomain:"al-manaal-modern-school.firebaseapp.com",
+  projectId:"al-manaal-modern-school",
+  storageBucket:"al-manaal-modern-school.firebasestorage.app",
+  messagingSenderId:"433622050570",
+  appId:"1:433622050570:web:79d2060f9678224eeebcf3"
+};
+let FB=false;
+function loadScript(src){return new Promise((ok,bad)=>{const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>bad(new Error("Could not load "+src));document.head.appendChild(s);});}
+async function connectFirebase(){
+  await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+  await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js");
+  if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
+  const fs=firebase.firestore();try{fs.settings({ignoreUndefinedProperties:true,merge:true});}catch(e){}
+  await fs.collection("settings").limit(1).get();
+  return fs;
+}
 async function boot(){
   render();
-  const c=window.claude;
-  const [db,user,dl]=await Promise.all([c?.use?c.use("db"):null,c?.use?c.use("user"):null,c?.use?c.use("downloads"):null]);
-  USER=user;DL=dl;
+  let db=null,user=null;
+  if(FIREBASE_CONFIG){try{db=await connectFirebase();FB=true;}catch(e){console.error(e);db=null;setTimeout(()=>toast("Could not reach the shared database. Working on this device only for now."),600);}}
+  if(!FB){const c=window.claude;let dl;[db,user,dl]=await Promise.all([c?.use?c.use("db"):null,c?.use?c.use("user"):null,c?.use?c.use("downloads"):null]);USER=user;DL=dl;}
   if(db){DB=db;MODE="shared";
+    if(!FB){
     try{ME=user?await user.id():null;}catch(e){}
     try{OWNER=user?await user.isOwner():false;}catch(e){}
-    try{const w=user?await user.can("data.write"):null;if(w===false)CAN_WRITE=false;}catch(e){}
+    try{const w=user?await user.can("data.write"):null;if(w===false)CAN_WRITE=false;}catch(e){}}
     const timer=setTimeout(()=>{if(loaded.size<COLS.length)$("#modeNote").textContent="Data is slow to arrive; what you see may be out of date.";},10000);
     let pending=false;const soon=()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;render();});};
     COLS.forEach(col=>UNSUBS.push(DB.collection(col).onSnapshot(snap=>{
@@ -542,7 +565,7 @@ function render(){
   if(myB){CUR=myB;$("#branchSel").innerHTML=`<option value="${esc(myB)}">${esc(branchName(myB))}</option>`;$("#branchSel").disabled=true;}
   else {$("#branchSel").disabled=false;$("#branchSel").innerHTML=`<option value="all" ${CUR==="all"?"selected":""}>All branches</option>`+bl.map(b=>`<option value="${b.id}" ${b.id===CUR?"selected":""}>${esc(b.name)}</option>`).join("");}
   renderUserChip();
-  $("#modePill").textContent=MODE==="shared"?(CAN_WRITE?"Live · shared data":"Live · view only"):MODE==="local"?"Local practice mode":"Connecting…";
+  $("#modePill").textContent=MODE==="shared"?(FB?"Live · whole class shares this data":CAN_WRITE?"Live · shared data":"Live · view only"):MODE==="local"?"Local practice mode":"Connecting…";
   if(MODE==="local")$("#modeNote").textContent="Your own practice copy, saved in this browser.";
   $("#pageTitle").textContent=meta.t;
   $("#crumb").textContent=meta.g?`${meta.g} · ${CUR==="all"?"All branches":branchName(CUR)}`:`${st.name} · ${st.term}`;
@@ -557,6 +580,7 @@ function render(){
   if(MODE==="shared"&&!CAN_WRITE)v.insertAdjacentHTML("afterbegin",`<div class="note row" style="justify-content:space-between"><span>View only: your access cannot change the shared school. Practise on your own copy to add and edit records.</span><button class="btn sm primary goLocal">Practise on my own copy</button></div>`);
   v.querySelectorAll("[data-need]").forEach(el=>{const [m,a]=el.dataset.need.split(":");if(!perm(m,a||"view"))el.remove();});
 }
+document.querySelector(".branch-sel").addEventListener("click",()=>{if($("#branchSel").disabled&&SESSION)toast(`Your account (${SESSION.username}) works only in ${branchName(SESSION.branchId)}. Sign in as admin to switch between branches.`);});
 $("#branchSel").onchange=e=>{CUR=e.target.value;try{localStorage.setItem("schoolhub-branch",CUR);}catch(x){}render();toast(CUR==="all"?"Showing all branches":"Switched to "+branchName(CUR));};
 $("#railSearch").onsubmit=e=>{e.preventDefault();stuFilter.q=$("#railQ").value;stuFilter.cls="";if(route()==="stu-details")render();else go("stu-details");};
 
@@ -1193,7 +1217,7 @@ const DEFAULT_ROLES={
  "role-accountant":{name:"Accountant",desc:"Collects fees and records income, expenses and payroll.",perms:PERMS({dashboard:["view"],stu:["view"],fee:FULL,inc:FULL,exp:FULL,hr:["view","add"],rep:["view"]})},
  "role-receptionist":{name:"Receptionist",desc:"Handles the front office, enquiries and new admissions.",perms:PERMS({dashboard:["view"],fo:FULL,stu:["view","add","edit"],aca:["view"],com:["view","add"]})}
 };
-const DEMO_USERS=[["u-superadmin","superadmin",null,"Super Admin","role-superadmin","all",{salt:"a3cf5c78fdf29dc2fbea563a",pwHash:"0d7076af42a6b15cd89a39dbf33e0b7fd32130b49fd21549d524d8c59e8bda16"}],["u-admin","admin","admin123","School Admin","role-admin","main"],["u-teacher","teacher","teacher123","Ahmed Warsame","role-teacher","main"],["u-accountant","accountant","account123","Fadumo Hassan","role-accountant","main"],["u-reception","reception","recep123","Front Desk","role-receptionist","main"],["u-north","north.admin","north123","Sahra Abdi","role-admin","north"]];
+const DEMO_USERS=[["u-superadmin","superadmin",null,"Super Admin","role-superadmin","all",{salt:"a3cf5c78fdf29dc2fbea563a",pwHash:"0d7076af42a6b15cd89a39dbf33e0b7fd32130b49fd21549d524d8c59e8bda16"}],["u-admin","admin","admin123","School Admin","role-admin","all"],["u-teacher","teacher","teacher123","Ahmed Warsame","role-teacher","main"],["u-accountant","accountant","account123","Fadumo Hassan","role-accountant","main"],["u-reception","reception","recep123","Front Desk","role-receptionist","main"],["u-north","north.admin","north123","Sahra Abdi","role-admin","north"]];
 let SESSION=null,OWNER=false,gateMode=null,showMenu=false;
 const AUTO_LOGIN=location.hash==="#open-admin"?"admin":null; /* a link ending in #open-admin opens already signed in as admin */
 let autoTried=false,autoSeeded=false;
@@ -1225,8 +1249,9 @@ function gate(){
     if(MODE==="shared"&&!CAN_WRITE){goLocal().then(()=>{const u=pick();if(u)startSession(u);});return false;}
     if(!D.users.length&&MODE==="local"){seedSampleLocal().then(()=>{const u=pick();if(u)startSession(u);});}
     else{const u=pick();if(u){startSession(u);return false;}}}
-  if(ready&&MODE==="local"&&!D.users.length&&!autoSeeded){autoSeeded=true;seedSampleLocal();}
-  const mode=!ready||(MODE==="local"&&!D.users.length&&autoSeeded&&SEEDING)?"wait":(D.users.length?"login":"setup");
+  const selfSeed=MODE==="local"||FB;
+  if(ready&&selfSeed&&!D.users.length&&!autoSeeded){autoSeeded=true;seedSampleLocal();}
+  const mode=!ready||(selfSeed&&!D.users.length&&autoSeeded)?"wait":(D.users.length?"login":"setup");
   if(mode!==gateMode){gateMode=mode;g.hidden=false;g.innerHTML=gateHTML(mode);bindGate(mode);}
   return false;
 }
